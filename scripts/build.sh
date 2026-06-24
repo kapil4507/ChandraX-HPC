@@ -9,7 +9,7 @@ echo "Detecting compiler environment..."
 # Check if nvcc is available
 if command -v nvcc &> /dev/null; then
     echo "CUDA compiler (nvcc) detected. Compiling for GPU-enabled target..."
-    nvcc -O3 -Xcompiler -fopenmp -std=c++11 \
+    nvcc -O3 -Xcompiler -fopenmp -std=c++11 -allow-unsupported-compiler \
         src/main.cu \
         src/parser.cpp \
         src/ingestion.cpp \
