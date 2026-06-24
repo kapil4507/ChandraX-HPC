@@ -43,12 +43,13 @@ bool loadBinarySequential(const std::string& filePath, ComplexFloat* buffer,
             const char* polData = rawBatch.data() + lineOffset + polOffset;
             
             for (int j = 0; j < samplesPerEcho; ++j) {
-                int8_t I = static_cast<int8_t>(polData[2 * j]);
-                int8_t Q = static_cast<int8_t>(polData[2 * j + 1]);
+                // Correct for offset-binary encoding (uint8_t values ranging 0-255 with zero-offset at 128)
+                uint8_t I = static_cast<uint8_t>(polData[2 * j]);
+                uint8_t Q = static_cast<uint8_t>(polData[2 * j + 1]);
                 
                 size_t outIdx = static_cast<size_t>(linesRead + line) * samplesPerEcho + j;
-                buffer[outIdx].r = static_cast<float>(I);
-                buffer[outIdx].i = static_cast<float>(Q);
+                buffer[outIdx].r = static_cast<float>(I) - 128.0f;
+                buffer[outIdx].i = static_cast<float>(Q) - 128.0f;
             }
         }
         linesRead += currentBatchLines;
@@ -114,12 +115,13 @@ bool loadBinaryParallel(const std::string& filePath, ComplexFloat* buffer,
                     const char* polData = rawChunk.data() + lineOffset + polOffset;
 
                     for (int j = 0; j < samplesPerEcho; ++j) {
-                        int8_t I = static_cast<int8_t>(polData[2 * j]);
-                        int8_t Q = static_cast<int8_t>(polData[2 * j + 1]);
+                        // Correct for offset-binary encoding (uint8_t values ranging 0-255 with zero-offset at 128)
+                        uint8_t I = static_cast<uint8_t>(polData[2 * j]);
+                        uint8_t Q = static_cast<uint8_t>(polData[2 * j + 1]);
                         
                         size_t outIdx = static_cast<size_t>(startLine + line) * samplesPerEcho + j;
-                        buffer[outIdx].r = static_cast<float>(I);
-                        buffer[outIdx].i = static_cast<float>(Q);
+                        buffer[outIdx].r = static_cast<float>(I) - 128.0f;
+                        buffer[outIdx].i = static_cast<float>(Q) - 128.0f;
                     }
                 }
             }
@@ -137,7 +139,7 @@ bool generateDummyBinary(const std::string& filePath, int lines, int totalLineEl
     }
 
     // Allocate single line buffer to avoid large RAM footprint during creation
-    std::vector<char> dummyLine(totalLineElements, 0);
+    std::vector<char> dummyLine(totalLineElements, 128); // Initialize to 128 (which is offset 0)
 
     // Default structural parameters for raw DFSAR data mapping
     int samplesPerEcho = 1024;
@@ -155,13 +157,13 @@ bool generateDummyBinary(const std::string& filePath, int lines, int totalLineEl
         for (int pol = 0; pol < numPols; ++pol) {
             int polOffset = header_bytes + pol * samplesPerEcho * 2;
             for (int j = 0; j < samplesPerEcho; ++j) {
-                // Synthetic phase chirp computation matching integer scaling (-128 to 127)
+                // Synthetic phase chirp computation matching offset binary scaling (0-255 centered at 128)
                 float phase = static_cast<float>(line) * 0.005f + static_cast<float>(j) * 0.02f;
-                float I_val = std::cos(phase) * 60.0f;
-                float Q_val = std::sin(phase) * 60.0f;
+                float I_val = std::cos(phase) * 60.0f + 128.0f;
+                float Q_val = std::sin(phase) * 60.0f + 128.0f;
 
-                dummyLine[polOffset + 2 * j] = static_cast<char>(static_cast<int8_t>(I_val));
-                dummyLine[polOffset + 2 * j + 1] = static_cast<char>(static_cast<int8_t>(Q_val));
+                dummyLine[polOffset + 2 * j] = static_cast<char>(static_cast<uint8_t>(I_val));
+                dummyLine[polOffset + 2 * j + 1] = static_cast<char>(static_cast<uint8_t>(Q_val));
             }
         }
 
