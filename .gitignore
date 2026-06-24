@@ -1,0 +1,29 @@
+# Data files
+data/
+*.zip
+*.xml
+*.raw
+*.bin
+*.pgm
+*.tiff
+*.dat
+
+# Compiled binaries and build artifacts
+build/
+bin/
+*.o
+*.out
+*.exe
+app_dfsar
+
+# Python environment and caches
+__pycache__/
+*.pyc
+.venv/
+env/
+
+# IDE files
+.vscode/
+.idea/
+.gemini/
+antigravity/
