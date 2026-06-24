@@ -45,36 +45,40 @@ def main():
     print(f"Original dimensions: {width} wide x {height} tall")
     
     # 1. Downsample (azimuth decimation)
-    # Taking every 32nd row brings the height down to ~15,934 pixels,
-    # which fits within GPU texture limits (typically 16k or 32k max).
-    decimation = 32
-    print(f"Downsampling along height (azimuth) by taking every {decimation}nd line...")
+    # Taking every 14th row brings the height down to ~36,422 pixels,
+    # which corrects the physical range/azimuth resolution ratio to 1:1.
+    decimation = 14
+    print(f"Downsampling along height (azimuth) by taking every {decimation}th line...")
     downsampled_data = img_data[::decimation, :]
     ds_height, ds_width = downsampled_data.shape
     print(f"Downsampled dimensions: {ds_width}x{ds_height}")
     
     try:
         ds_img = Image.fromarray(downsampled_data)
-        ds_out = "data/dfsar_lunar_downsampled.png"
+        ds_out = "data/dfsar_lunar_aspect_corrected.png"
         ds_img.save(ds_out)
-        print(f"Successfully saved downsampled overview: {ds_out}")
+        print(f"Successfully saved aspect-corrected overview: {ds_out}")
     except Exception as e:
         print(f"Failed to save downsampled image: {e}")
 
-    # 2. Crop a 1024x1024 focused segment
-    # This keeps full resolution of a smaller area so you can inspect craters closely.
+    # 2. Crop a 1024x1024 focused segment with correct aspect ratio
+    # Slices 14 * 1024 = 14,336 raw rows and downsamples them by 14
+    # to yield a physical 1:1 ratio 1024x1024 crop.
     crop_size = 1024
-    if height > crop_size:
+    decimation_factor = 14
+    required_rows = crop_size * decimation_factor
+    
+    if height > required_rows:
         start_y = height // 2
-        end_y = start_y + crop_size
-        print(f"Cropping a {crop_size}x{crop_size} segment from row {start_y} to {end_y}...")
-        cropped_data = img_data[start_y:end_y, :]
+        end_y = start_y + required_rows
+        print(f"Cropping a physical {crop_size}x{crop_size} segment (slicing {required_rows} raw lines at stride {decimation_factor})...")
+        cropped_data = img_data[start_y:end_y:decimation_factor, :]
         
         try:
             crop_img = Image.fromarray(cropped_data)
             crop_out = "data/dfsar_lunar_crop.png"
             crop_img.save(crop_out)
-            print(f"Successfully saved full-resolution crop: {crop_out}")
+            print(f"Successfully saved aspect-corrected crop: {crop_out}")
         except Exception as e:
             print(f"Failed to save cropped image: {e}")
 
