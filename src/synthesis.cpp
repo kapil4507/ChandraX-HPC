@@ -10,60 +10,58 @@ bool synthesizeImage(const ComplexFloat* h_data, int lines, int samples, const s
     double tStart = omp_get_wtime();
     size_t numElements = static_cast<size_t>(lines) * samples;
 
-    std::cout << "[Phase 4] Starting magnitude calculation and image mapping..." << std::endl;
+    std::cout << "[Phase 4] Starting magnitude calculation and 2.5-sigma contrast stretching..." << std::endl;
 
     std::vector<float> magnitudes(numElements);
-    float minMag = 1e20f;
-    float maxMag = -1e20f;
+    double sum = 0.0;
 
-    // Task 4.2: Magnitude Calculation using OpenMP
-    // Map with reduction to find min/max values in a single parallel sweep
-    #pragma omp parallel
-    {
-        float localMin = 1e20f;
-        float localMax = -1e20f;
-
-        #pragma omp for nowait
-        for (size_t i = 0; i < numElements; ++i) {
-            // Absolute magnitude: sqrt(r^2 + i^2)
-            // Divide by 'lines' to scale for the unnormalized inverse cuFFT (Azimuth IFFT)
-            float realVal = h_data[i].r;
-            float imagVal = h_data[i].i;
-            float mag = std::sqrt(realVal * realVal + imagVal * imagVal) / lines;
-            magnitudes[i] = mag;
-
-            if (mag < localMin) localMin = mag;
-            if (mag > localMax) localMax = mag;
-        }
-
-        #pragma omp critical
-        {
-            if (localMin < minMag) minMag = localMin;
-            if (localMax > maxMag) maxMag = localMax;
-        }
+    // Task 4.2: Magnitude Calculation and sum accumulation using OpenMP
+    #pragma omp parallel for reduction(+:sum)
+    for (size_t i = 0; i < numElements; ++i) {
+        float realVal = h_data[i].r;
+        float imagVal = h_data[i].i;
+        // Absolute magnitude scaled by lines for unnormalized inverse cuFFT
+        float mag = std::sqrt(realVal * realVal + imagVal * imagVal) / lines;
+        magnitudes[i] = mag;
+        sum += mag;
     }
 
-    std::cout << "  - Computed magnitudes. Min: " << minMag << ", Max: " << maxMag << std::endl;
+    float mean = static_cast<float>(sum / numElements);
 
-    // Prevent divide-by-zero if image is flat
-    float range = maxMag - minMag;
-    if (range < 1e-6f) {
-        range = 1.0f;
+    // Compute standard deviation
+    double sq_sum = 0.0;
+    #pragma omp parallel for reduction(+:sq_sum)
+    for (size_t i = 0; i < numElements; ++i) {
+        float diff = magnitudes[i] - mean;
+        sq_sum += diff * diff;
     }
+    float stddev = std::sqrt(static_cast<float>(sq_sum / numElements));
+
+    // Apply 2.5-sigma clipping (standard practice for high-dynamic-range radar imagery)
+    // This removes bright noise spikes/calibration frame outliers and stretches active pixels
+    float minClip = mean - 2.5f * stddev;
+    float maxClip = mean + 2.5f * stddev;
+    
+    if (minClip < 0.0f) minClip = 0.0f;
+    if (maxClip <= minClip) maxClip = minClip + 1e-5f; // Prevent divide by zero
+
+    float range = maxClip - minClip;
+
+    std::cout << "  - Image Stats: Mean = " << mean << ", StdDev = " << stddev << std::endl;
+    std::cout << "  - Scaling Range (2.5-sigma): [" << minClip << ", " << maxClip << "]" << std::endl;
 
     // Allocate 1 byte per pixel for grayscale PGM
     std::vector<unsigned char> pixels(numElements);
 
     // Map intensities to 0-255 scale using OpenMP
-    std::cout << "  - Normalizing intensities to 0-255 range..." << std::endl;
     #pragma omp parallel for
     for (size_t i = 0; i < numElements; ++i) {
-        float normalized = (magnitudes[i] - minMag) / range;
+        float val = magnitudes[i];
+        if (val > maxClip) val = maxClip;
+        if (val < minClip) val = minClip;
         
-        // Apply a small power scaling (gamma correction) to enhance radar contrast (e.g. gamma = 0.5)
-        normalized = std::pow(normalized, 0.5f);
-        
-        pixels[i] = static_cast<unsigned char>(std::min(std::max(normalized * 255.0f, 0.0f), 255.0f));
+        float normalized = (val - minClip) / range;
+        pixels[i] = static_cast<unsigned char>(normalized * 255.0f);
     }
 
     // Task 4.3: Save as PGM (P5 format)
@@ -74,7 +72,7 @@ bool synthesizeImage(const ComplexFloat* h_data, int lines, int samples, const s
         return false;
     }
 
-    // PGM P5 header: width (samples) and height (lines)
+    // PGM P5 header
     file << "P5\n" << samples << " " << lines << "\n255\n";
     file.write(reinterpret_cast<const char*>(pixels.data()), numElements);
     file.close();
