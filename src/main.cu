@@ -162,7 +162,9 @@ int main(int argc, char* argv[]) {
     double gpuTime = 0.0;
 #ifdef __CUDACC__
     std::cout << "\n[Phase 3] Running GPU Processing Pipeline (Range-Doppler Algorithm)..." << std::endl;
-    bool gpuSuccess = runGPUProcessing(dataArray, dims.lines, dims.samplesPerEcho, gpuTime);
+    bool gpuSuccess = runGPUProcessing(dataArray, dims.lines, dims.samplesPerEcho, 
+                                       dims.centerFrequency, dims.slantRange, dims.prf,
+                                       gpuTime);
     if (!gpuSuccess) {
         std::cerr << "GPU processing failed." << std::endl;
         delete[] dataArray;

@@ -50,6 +50,20 @@ MatrixDimensions parseXML(const std::string& xmlPath) {
         dims.numPols = 2; // Default fallback
     }
 
+    std::regex centerFreqRegex(R"(<isda:radar_center_frequency unit="Hz">([^<]+)</isda:radar_center_frequency>)");
+    std::regex slantRangeRegex(R"(<isda:slant_range_near_edge unit="m">([^<]+)</isda:slant_range_near_edge>)");
+    std::regex prfRegex(R"(<isda:pulse_repetition_frequency unit="Hz">([^<]+)</isda:pulse_repetition_frequency>)");
+
+    if (std::regex_search(content, match, centerFreqRegex)) {
+        dims.centerFrequency = std::stod(match[1].str());
+    }
+    if (std::regex_search(content, match, slantRangeRegex)) {
+        dims.slantRange = std::stod(match[1].str());
+    }
+    if (std::regex_search(content, match, prfRegex)) {
+        dims.prf = std::stod(match[1].str());
+    }
+
     auto words_begin = std::sregex_iterator(content.begin(), content.end(), axisArrayRegex);
     auto words_end = std::sregex_iterator();
 

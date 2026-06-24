@@ -10,6 +10,9 @@ struct MatrixDimensions {
     int numPols = 0;            // Number of polarizations (e.g. 2)
     std::string dataType;       // e.g., "SignedByte"
     std::string fileName;       // e.g., "ch2_sar_nrxl_..."
+    double centerFrequency = 1.25e9;  // radar_center_frequency (Hz)
+    double slantRange = 94287.05;     // slant_range_near_edge (m)
+    double prf = 2596.38;             // pulse_repetition_frequency (Hz)
 };
 
 // Parses a PDS4 XML label file and extracts dimensions
