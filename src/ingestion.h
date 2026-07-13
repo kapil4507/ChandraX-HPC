@@ -5,12 +5,12 @@
 #include "types.h"
 
 // Sequential baseline read
-bool loadBinarySequential(const string& filePath, ComplexFloat* buffer, 
+bool loadBinarySequential(const std::string& filePath, ComplexFloat* buffer, 
                           int lines, int totalLineElements, int samplesPerEcho, 
                           int validSamples, int numPols, int polIndex);
 
 // OpenMP multi-threaded parallel read
-bool loadBinaryParallel(const string& filePath, ComplexFloat* buffer, 
+bool loadBinaryParallel(const std::string& filePath, ComplexFloat* buffer, 
                         int lines, int totalLineElements, int samplesPerEcho, 
                         int validSamples, int numPols, int polIndex, int numThreads);
 
