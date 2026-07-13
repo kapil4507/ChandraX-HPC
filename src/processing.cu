@@ -29,6 +29,43 @@ using namespace std;
         } \
     } while (0)
 
+// Custom CUDA Kernel for Range focusing (Matched Filter)
+// Applies quadratic phase correction in the range frequency domain.
+__global__ void rangeMatchedFilterKernel(cufftComplex* d_data, int lines, int samples, 
+                                         float Kr, float samplingRate) {
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    
+    if (row < lines && col < samples) {
+        int idx = row * samples + col;
+        
+        // Compute range frequency corresponding to this sample
+        float f = (col < samples / 2) ? 
+                  col * (samplingRate / samples) : 
+                  (col - samples) * (samplingRate / samples);
+                  
+        // Range phase correction: phi = pi * f^2 / Kr
+        float phase = 3.14159265f * f * f / Kr;
+        
+        // Matched filter conjugate reference: exp(j * phase)
+        float ref_x = cosf(phase);
+        float ref_y = sinf(phase);
+        
+        // Complex multiplication: data * conjugate(reference)
+        // Wait, the range matched filter requires the complex conjugate, so exp(j * phase) is correct if the chirp was exp(-j * phase)
+        cufftComplex val = d_data[idx];
+        cufftComplex res;
+        res.x = val.x * ref_x - val.y * ref_y;
+        res.y = val.x * ref_y + val.y * ref_x;
+        
+        // Normalize range IFFT since cuFFT unnormalized
+        res.x /= samples;
+        res.y /= samples;
+        
+        d_data[idx] = res;
+    }
+}
+
 // Custom CUDA Kernel for Azimuth Doppler focusing (Matched Filter)
 // Applies quadratic phase correction in the Doppler frequency domain.
 __global__ void azimuthMatchedFilterKernel(cufftComplex* d_data, int lines, int samples, 
@@ -63,7 +100,7 @@ __global__ void azimuthMatchedFilterKernel(cufftComplex* d_data, int lines, int 
 
 bool runGPUProcessing(ComplexFloat* h_data, int lines, int samples, 
                       double centerFrequency, double slantRange, double prf,
-                      double& totalGPUSecs) {
+                      double rangeBandwidth, double pulseDuration, double& totalGPUSecs) {
     double tStart = omp_get_wtime();
 
     size_t numElements = static_cast<size_t>(lines) * samples;
@@ -80,7 +117,43 @@ bool runGPUProcessing(ComplexFloat* h_data, int lines, int samples,
     cout << "  - Copying radar matrix to GPU (cudaMemcpy)..." << endl;
     CHECK_CUDA(cudaMemcpy(d_data, h_data, dataSizeBytes, cudaMemcpyHostToDevice));
 
-    // Task 3.2: 1D Forward FFT along columns (Azimuth FFT)
+    // Task 3.2a: Range Compression (Row-wise FFT)
+    cout << "  - Executing Forward 1D cuFFT (Range) across rows..." << endl;
+    int rankR = 1;
+    int nR[1] = { samples };
+    int inembedR[1] = { samples };
+    int istrideR = 1;
+    int idistR = samples;
+    int onembedR[1] = { samples };
+    int ostrideR = 1;
+    int odistR = samples;
+    
+    cufftHandle rangePlan;
+    CHECK_CUFFT(cufftPlanMany(&rangePlan, rankR, nR, 
+                              inembedR, istrideR, idistR, 
+                              onembedR, ostrideR, odistR, 
+                              CUFFT_C2C, lines));
+                              
+    CHECK_CUFFT(cufftExecC2C(rangePlan, d_data, d_data, CUFFT_FORWARD));
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    // Execute Range Matched Filter
+    float Kr = static_cast<float>(rangeBandwidth / pulseDuration);
+    float fs = 83.33e6f; // Standard DFSAR ADC sampling rate 83.33 MHz
+    cout << "  - Executing Range Matched Filter Kernel (Kr=" << Kr << " Hz/s)..." << endl;
+    
+    dim3 blockDimR(16, 16);
+    dim3 gridDimR((samples + blockDimR.x - 1) / blockDimR.x, 
+                  (lines + blockDimR.y - 1) / blockDimR.y);
+    rangeMatchedFilterKernel<<<gridDimR, blockDimR>>>(d_data, lines, samples, Kr, fs);
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    cout << "  - Executing Inverse 1D cuFFT (Range) across rows..." << endl;
+    CHECK_CUFFT(cufftExecC2C(rangePlan, d_data, d_data, CUFFT_INVERSE));
+    CHECK_CUDA(cudaDeviceSynchronize());
+    CHECK_CUFFT(cufftDestroy(rangePlan));
+
+    // Task 3.2b: 1D Forward FFT along columns (Azimuth FFT)
     cout << "  - Executing Forward 1D cuFFT (Azimuth) across columns..." << endl;
     
     // Column-wise 1D FFT using cufftPlanMany:

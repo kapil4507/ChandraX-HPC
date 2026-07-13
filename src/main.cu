@@ -167,7 +167,7 @@ int main(int argc, char* argv[]) {
     cout << "\n[Phase 3] Running GPU Processing Pipeline (Range-Doppler Algorithm)..." << endl;
     bool gpuSuccess = runGPUProcessing(dataArray, dims.lines, dims.validSamples, 
                                        dims.centerFrequency, dims.slantRange, dims.prf,
-                                       gpuTime);
+                                       dims.rangeBandwidth, dims.pulseDuration, gpuTime);
     if (!gpuSuccess) {
         cerr << "GPU processing failed." << endl;
         delete[] dataArray;
