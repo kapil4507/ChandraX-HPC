@@ -7,12 +7,14 @@
 #include <cstdint>
 #include <omp.h>
 
-bool loadBinarySequential(const std::string& filePath, ComplexFloat* buffer, 
+using namespace std;
+
+bool loadBinarySequential(const string& filePath, ComplexFloat* buffer, 
                           int lines, int totalLineElements, int samplesPerEcho, 
-                          int numPols, int polIndex) {
-    std::ifstream file(filePath, std::ios::binary);
+                          int validSamples, int numPols, int polIndex) {
+    ifstream file(filePath, ios::binary);
     if (!file.is_open()) {
-        std::cerr << "Error: Could not open file for sequential read: " << filePath << std::endl;
+        cerr << "Error: Could not open file for sequential read: " << filePath << endl;
         return false;
     }
 
@@ -22,16 +24,16 @@ bool loadBinarySequential(const std::string& filePath, ComplexFloat* buffer,
     // Process in batches of lines to optimize I/O overhead
     const int batchLines = 4096;
     size_t batchBytes = static_cast<size_t>(batchLines) * totalLineElements;
-    std::vector<char> rawBatch(batchBytes);
+    vector<char> rawBatch(batchBytes);
 
     int linesRead = 0;
     while (linesRead < lines) {
-        int currentBatchLines = std::min(batchLines, lines - linesRead);
+        int currentBatchLines = min(batchLines, lines - linesRead);
         size_t currentBatchBytes = static_cast<size_t>(currentBatchLines) * totalLineElements;
         
         file.read(rawBatch.data(), currentBatchBytes);
-        std::streamsize bytesRead = file.gcount();
-        if (bytesRead < static_cast<std::streamsize>(currentBatchBytes)) {
+        streamsize bytesRead = file.gcount();
+        if (bytesRead < static_cast<streamsize>(currentBatchBytes)) {
             // Adjust batch lines based on actual read bytes
             currentBatchLines = static_cast<int>(bytesRead / totalLineElements);
             if (currentBatchLines == 0) break;
@@ -42,12 +44,12 @@ bool loadBinarySequential(const std::string& filePath, ComplexFloat* buffer,
             size_t lineOffset = static_cast<size_t>(line) * totalLineElements;
             const char* polData = rawBatch.data() + lineOffset + polOffset;
             
-            for (int j = 0; j < samplesPerEcho; ++j) {
+            for (int j = 0; j < validSamples; ++j) {
                 // Correct for offset-binary encoding (uint8_t values ranging 0-255 with zero-offset at 128)
                 uint8_t I = static_cast<uint8_t>(polData[2 * j]);
                 uint8_t Q = static_cast<uint8_t>(polData[2 * j + 1]);
                 
-                size_t outIdx = static_cast<size_t>(linesRead + line) * samplesPerEcho + j;
+                size_t outIdx = static_cast<size_t>(linesRead + line) * validSamples + j;
                 buffer[outIdx].r = static_cast<float>(I) - 128.0f;
                 buffer[outIdx].i = static_cast<float>(Q) - 128.0f;
             }
@@ -59,9 +61,9 @@ bool loadBinarySequential(const std::string& filePath, ComplexFloat* buffer,
     return true;
 }
 
-bool loadBinaryParallel(const std::string& filePath, ComplexFloat* buffer, 
+bool loadBinaryParallel(const string& filePath, ComplexFloat* buffer, 
                         int lines, int totalLineElements, int samplesPerEcho, 
-                        int numPols, int polIndex, int numThreads) {
+                        int validSamples, int numPols, int polIndex, int numThreads) {
     bool success = true;
     int header_bytes = totalLineElements - numPols * samplesPerEcho * 2;
     int polOffset = header_bytes + polIndex * samplesPerEcho * 2;
@@ -85,11 +87,11 @@ bool loadBinaryParallel(const std::string& filePath, ComplexFloat* buffer,
         }
 
         if (linesToRead > 0) {
-            std::ifstream threadFile(filePath, std::ios::binary);
+            ifstream threadFile(filePath, ios::binary);
             if (!threadFile.is_open()) {
                 #pragma omp critical
                 {
-                    std::cerr << "Error: Thread " << tid << " could not open file: " << filePath << std::endl;
+                    cerr << "Error: Thread " << tid << " could not open file: " << filePath << endl;
                     success = false;
                 }
             } else {
@@ -99,11 +101,11 @@ bool loadBinaryParallel(const std::string& filePath, ComplexFloat* buffer,
 
                 // Allocate buffer to read the entire chunk in a single parallel read operation
                 size_t bytesToRead = static_cast<size_t>(linesToRead) * totalLineElements;
-                std::vector<char> rawChunk(bytesToRead);
+                vector<char> rawChunk(bytesToRead);
 
                 threadFile.read(rawChunk.data(), bytesToRead);
-                std::streamsize bytesRead = threadFile.gcount();
-                if (bytesRead < static_cast<std::streamsize>(bytesToRead)) {
+                streamsize bytesRead = threadFile.gcount();
+                if (bytesRead < static_cast<streamsize>(bytesToRead)) {
                     // Adjust lines to process if file was smaller than expected
                     linesToRead = static_cast<int>(bytesRead / totalLineElements);
                 }
@@ -114,12 +116,12 @@ bool loadBinaryParallel(const std::string& filePath, ComplexFloat* buffer,
                     size_t lineOffset = static_cast<size_t>(line) * totalLineElements;
                     const char* polData = rawChunk.data() + lineOffset + polOffset;
 
-                    for (int j = 0; j < samplesPerEcho; ++j) {
+                    for (int j = 0; j < validSamples; ++j) {
                         // Correct for offset-binary encoding (uint8_t values ranging 0-255 with zero-offset at 128)
                         uint8_t I = static_cast<uint8_t>(polData[2 * j]);
                         uint8_t Q = static_cast<uint8_t>(polData[2 * j + 1]);
                         
-                        size_t outIdx = static_cast<size_t>(startLine + line) * samplesPerEcho + j;
+                        size_t outIdx = static_cast<size_t>(startLine + line) * validSamples + j;
                         buffer[outIdx].r = static_cast<float>(I) - 128.0f;
                         buffer[outIdx].i = static_cast<float>(Q) - 128.0f;
                     }
@@ -131,15 +133,15 @@ bool loadBinaryParallel(const std::string& filePath, ComplexFloat* buffer,
     return success;
 }
 
-bool generateDummyBinary(const std::string& filePath, int lines, int totalLineElements) {
-    std::ofstream file(filePath, std::ios::binary);
+bool generateDummyBinary(const string& filePath, int lines, int totalLineElements) {
+    ofstream file(filePath, ios::binary);
     if (!file.is_open()) {
-        std::cerr << "Error: Could not open file for writing dummy data: " << filePath << std::endl;
+        cerr << "Error: Could not open file for writing dummy data: " << filePath << endl;
         return false;
     }
 
     // Allocate single line buffer to avoid large RAM footprint during creation
-    std::vector<char> dummyLine(totalLineElements, 128); // Initialize to 128 (which is offset 0)
+    vector<char> dummyLine(totalLineElements, 128); // Initialize to 128 (which is offset 0)
 
     // Default structural parameters for raw DFSAR data mapping
     int samplesPerEcho = 1024;
@@ -159,8 +161,8 @@ bool generateDummyBinary(const std::string& filePath, int lines, int totalLineEl
             for (int j = 0; j < samplesPerEcho; ++j) {
                 // Synthetic phase chirp computation matching offset binary scaling (0-255 centered at 128)
                 float phase = static_cast<float>(line) * 0.005f + static_cast<float>(j) * 0.02f;
-                float I_val = std::cos(phase) * 60.0f + 128.0f;
-                float Q_val = std::sin(phase) * 60.0f + 128.0f;
+                float I_val = cos(phase) * 60.0f + 128.0f;
+                float Q_val = sin(phase) * 60.0f + 128.0f;
 
                 dummyLine[polOffset + 2 * j] = static_cast<char>(static_cast<uint8_t>(I_val));
                 dummyLine[polOffset + 2 * j + 1] = static_cast<char>(static_cast<uint8_t>(Q_val));

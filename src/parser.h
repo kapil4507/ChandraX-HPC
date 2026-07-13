@@ -13,6 +13,9 @@ struct MatrixDimensions {
     double centerFrequency = 1.25e9;  // radar_center_frequency (Hz)
     double slantRange = 94287.05;     // slant_range_near_edge (m)
     double prf = 2596.38;             // pulse_repetition_frequency (Hz)
+    int validSamples = 768;           // Active radar samples per echo (cropped from 1024)
+    double rangeBandwidth = 75.0e6;   // Range bandwidth (Hz)
+    double pulseDuration = 65.0e-6;   // Range pulse duration (s)
 };
 
 // Parses a PDS4 XML label file and extracts dimensions

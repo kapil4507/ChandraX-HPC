@@ -5,13 +5,15 @@
 #include <omp.h>
 #include <cmath>
 
+using namespace std;
+
 // Helper macro for checking CUDA errors
 #define CHECK_CUDA(call) \
     do { \
         cudaError_t err = call; \
         if (err != cudaSuccess) { \
-            std::cerr << "CUDA Error at " << __FILE__ << ":" << __LINE__ \
-                      << " - " << cudaGetErrorString(err) << std::endl; \
+            cerr << "CUDA Error at " << __FILE__ << ":" << __LINE__ \
+                      << " - " << cudaGetErrorString(err) << endl; \
             return false; \
         } \
     } while (0)
@@ -21,8 +23,8 @@
     do { \
         cufftResult result = call; \
         if (result != CUFFT_SUCCESS) { \
-            std::cerr << "cuFFT Error at " << __FILE__ << ":" << __LINE__ \
-                      << " - Code: " << result << std::endl; \
+            cerr << "cuFFT Error at " << __FILE__ << ":" << __LINE__ \
+                      << " - Code: " << result << endl; \
             return false; \
         } \
     } while (0)
@@ -69,17 +71,17 @@ bool runGPUProcessing(ComplexFloat* h_data, int lines, int samples,
 
     cufftComplex* d_data = nullptr;
 
-    std::cout << "[Phase 3] Initializing GPU Processing..." << std::endl;
+    cout << "[Phase 3] Initializing GPU Processing..." << endl;
     
     // Task 3.1: Host to Device Transfer
-    std::cout << "  - Allocating GPU device memory (cudaMalloc)..." << std::endl;
+    cout << "  - Allocating GPU device memory (cudaMalloc)..." << endl;
     CHECK_CUDA(cudaMalloc(&d_data, dataSizeBytes));
 
-    std::cout << "  - Copying radar matrix to GPU (cudaMemcpy)..." << std::endl;
+    cout << "  - Copying radar matrix to GPU (cudaMemcpy)..." << endl;
     CHECK_CUDA(cudaMemcpy(d_data, h_data, dataSizeBytes, cudaMemcpyHostToDevice));
 
     // Task 3.2: 1D Forward FFT along columns (Azimuth FFT)
-    std::cout << "  - Executing Forward 1D cuFFT (Azimuth) across columns..." << std::endl;
+    cout << "  - Executing Forward 1D cuFFT (Azimuth) across columns..." << endl;
     
     // Column-wise 1D FFT using cufftPlanMany:
     // We execute a batch of 'samples' transforms, each of size 'lines'.
@@ -108,10 +110,10 @@ bool runGPUProcessing(ComplexFloat* h_data, int lines, int samples,
     float lambda = 299792458.0f / static_cast<float>(centerFrequency);
     float Ka = (2.0f * V * V) / (lambda * static_cast<float>(slantRange));
     
-    std::cout << "  - Calculated Doppler parameters:" << std::endl;
-    std::cout << "    - Wavelength (lambda): " << lambda << " m" << std::endl;
-    std::cout << "    - Azimuth FM rate (Ka): " << Ka << " Hz/s" << std::endl;
-    std::cout << "  - Executing Azimuth Matched Filter Doppler focusing kernel..." << std::endl;
+    cout << "  - Calculated Doppler parameters:" << endl;
+    cout << "    - Wavelength (lambda): " << lambda << " m" << endl;
+    cout << "    - Azimuth FM rate (Ka): " << Ka << " Hz/s" << endl;
+    cout << "  - Executing Azimuth Matched Filter Doppler focusing kernel..." << endl;
     
     dim3 blockDim(16, 16);
     dim3 gridDim((samples + blockDim.x - 1) / blockDim.x, 
@@ -120,7 +122,7 @@ bool runGPUProcessing(ComplexFloat* h_data, int lines, int samples,
     CHECK_CUDA(cudaDeviceSynchronize());
 
     // Task 3.4: 1D Inverse FFT along columns (Azimuth IFFT)
-    std::cout << "  - Executing Inverse 1D cuFFT (Azimuth) across columns..." << std::endl;
+    cout << "  - Executing Inverse 1D cuFFT (Azimuth) across columns..." << endl;
     CHECK_CUFFT(cufftExecC2C(azimuthPlan, d_data, d_data, CUFFT_INVERSE));
     CHECK_CUDA(cudaDeviceSynchronize());
 
@@ -128,16 +130,16 @@ bool runGPUProcessing(ComplexFloat* h_data, int lines, int samples,
     CHECK_CUFFT(cufftDestroy(azimuthPlan));
 
     // Task 4.1: Device to Host Transfer
-    std::cout << "  - Transferring focused matrix back to Host (cudaMemcpy)..." << std::endl;
+    cout << "  - Transferring focused matrix back to Host (cudaMemcpy)..." << endl;
     CHECK_CUDA(cudaMemcpy(h_data, d_data, dataSizeBytes, cudaMemcpyDeviceToHost));
 
     // Free device memory
-    std::cout << "  - Freeing GPU device memory..." << std::endl;
+    cout << "  - Freeing GPU device memory..." << endl;
     CHECK_CUDA(cudaFree(d_data));
 
     double tEnd = omp_get_wtime();
     totalGPUSecs = tEnd - tStart;
     
-    std::cout << "GPU Processing finished successfully in " << totalGPUSecs << " seconds." << std::endl;
+    cout << "GPU Processing finished successfully in " << totalGPUSecs << " seconds." << endl;
     return true;
 }
